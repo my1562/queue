@@ -15,17 +15,35 @@ func (n *NotifierImpl) Notify(chatID int64, message string) error {
 	return nil
 }
 
+type PriorityCheckerImpl struct {
+}
+
+func (p *PriorityCheckerImpl) PriorityCheck(arrressID int64) error {
+	log.Printf("Checking address: %d", arrressID)
+	return nil
+}
+
 const redisAddr = "127.0.0.1:6379"
 
 func runServer() {
 	notifier := &NotifierImpl{}
-	notifyHandler := queue.NewNotifyHandler(notifier)
+	priorityChecker := &PriorityCheckerImpl{}
+
 	redis := asynq.RedisClientOpt{Addr: redisAddr}
 	server := asynq.NewServer(redis, asynq.Config{
 		Concurrency: 1,
 	})
+
 	mux := asynq.NewServeMux()
-	mux.Handle(queue.TaskTypeNotify, notifyHandler)
+	mux.Handle(
+		queue.TaskTypeNotify,
+		queue.NewNotifyHandler(notifier),
+	)
+	mux.Handle(
+		queue.TaskTypePriorityCheck,
+		queue.NewPriorityCheckHandler(priorityChecker),
+	)
+
 	if err := server.Run(mux); err != nil {
 		log.Fatalf("could not run server: %v", err)
 	}
@@ -38,8 +56,10 @@ func main() {
 
 	go runServer()
 
-	task := queue.NewNotifyTask(123, "hello world")
-	if err := client.Enqueue(task); err != nil {
+	if err := client.Enqueue(queue.NewNotifyTask(123, "hello world")); err != nil {
+		log.Fatal(err)
+	}
+	if err := client.Enqueue(queue.NewPriorityCheckTask(100500)); err != nil {
 		log.Fatal(err)
 	}
 
